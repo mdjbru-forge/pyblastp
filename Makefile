@@ -17,8 +17,7 @@ help:
 	@echo "  doc         Run sphinx to generate the module documentation  "
 	@echo "  clean       Clean everything (coverage, docs, pyc files)     "
 	@echo "                                                               "
-	@echo "  (with sudo rights)                                           "
-	@echo "  install     Install the module                               "
+	@echo "  install     Install the module and command-line tools        "
 	@echo "  uninstall   Uninstall the module                             "
 
 ### * Main targets
@@ -54,8 +53,9 @@ clean:
 ### ** install
 install:
 	rm -fr $(PYTHON_MODULE_EGG)
-	pip install -e .
+	pip install --user -e .
 
 ### ** uninstall
 uninstall:
+	rm ~/.local/bin/pyblastp
 	pip uninstall -y $(PYTHON_MODULE)
