@@ -6,10 +6,11 @@ from setuptools import setup, find_packages
 
 setup(name = "pyblastp",
       version = "0.0.1",
-      py_modules = ["pyblastp"],
+      py_modules = ["pyblastp", "pyblastpScripts"],
+      install_requires = ["biopython"],
       entry_points =  {
           "console_scripts" : [
-              "pyblastp=pyblastpMainScripts:main"
+              "pyblastp=pyblastpScripts:main"
           ]
       }
 )
