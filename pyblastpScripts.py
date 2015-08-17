@@ -21,6 +21,7 @@ DESCRIPTION = ("Convenient command line tool to run blastp locally. The blastp "
 
 import os
 import sys
+import shutil
 import argparse
 import pyblastp as pyblastp
 
@@ -78,6 +79,12 @@ def makeParser() :
                         help = "Number of cores to use for blastp. The query "
                         "file will be split in multiple fasta files and "
                         "several blastp runs will be started.")
+    # Shuffle
+    parser.add_argument("-s", "--shuffle", action = "store_true",
+                        help = "Shuffle the sequences between the cores "
+                        "(useful to make sure that all cores get a similar "
+                        "work load in the case the sequences are sorted "
+                        "by length in the input file)")
     return parser
 
 ### * Main
@@ -104,6 +111,10 @@ def main(args = None, stdout = None, stderr = None) :
     # Ungap input file
     pyblastp.ungapFasta(args.query_file, args.query_file + ".ungap.tmp")
     inputFile = args.query_file + ".ungap.tmp"
+    # Shuffle
+    if args.shuffle :
+        pyblastp.shuffleFastaFile(inputFile, inputFile + ".shuffled")
+        shutil.move(inputFile + ".shuffled", inputFile)
     # Make database
     if args.subject_file is not None :
         db = pyblastp.makeBlastDb(inFile = args.subject_file,

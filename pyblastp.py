@@ -12,6 +12,7 @@ import subprocess
 import argparse
 import random
 import math
+from Bio import SeqIO
 from Bio import AlignIO
 
 ### * Functions
@@ -140,6 +141,33 @@ def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, 
         raise Exception("jobs and cores cannot be both > 1")
     return out
 
+
+### ** shuffleFastaFile(fastaFile, outFile)
+
+def shuffleFastaFile(fastaFile, outFile) :
+    """Shuffle the sequence order in a fasta file (not mixing the sequences 
+    names and sequences, keeping the data as is but just shuffling the order 
+    in which sequences are presented in the file). Line wrapping is not 
+    preserved (biopython does the line wrapping in the output file).
+
+    All the sequences are loaded into memory at the same time, so there should 
+    be enough memory to hold them all.
+
+    Args:
+        fastaFile (str): Input fasta file
+        outFile (str): Output fasta file
+
+    """
+    seqs = SeqIO.parse(fastaFile, "fasta")
+    seqList = []
+    for seq in seqs :
+        seqList.append(seq)
+    outOrder = range(len(seqList))
+    random.shuffle(outOrder)
+    with open(outFile, "w") as fo :
+        for i in outOrder :
+            SeqIO.write(seqList[i], fo, "fasta")
+    
 ### ** splitFastaFile(fastaFile, n)
 
 def splitFastaFile(fastaFile, n) :
