@@ -18,7 +18,7 @@ help:
 ### ** install
 install:
 	rm -fr $(PYTHON_MODULE_EGG)
-	pip install --user .
+	pip install --upgrade --user .
 
 ### ** uninstall
 uninstall:
