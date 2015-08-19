@@ -5,7 +5,7 @@
 from setuptools import setup, find_packages
 
 setup(name = "pyblastp",
-      version = "0.0.1",
+      version = "0.0.2",
       py_modules = ["pyblastp", "pyblastpScripts"],
       install_requires = ["biopython"],
       entry_points =  {
