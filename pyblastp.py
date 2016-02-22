@@ -15,6 +15,11 @@ import math
 from Bio import SeqIO
 from Bio import AlignIO
 
+### ** Parameters
+
+OUTFMT_HEADER = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
+                 "qstart", "qend", "sstart", "send", "evalue", "bitscore"]
+
 ### * Functions
 
 ### ** randomTag(n)
@@ -285,3 +290,81 @@ def ungapFasta(inputFile, out) :
                     fo.write(l)
                 else :
                     fo.write(l.replace("-", ""))
+
+### ** parseBlastpOutput
+
+def parseBlastpOutput(outputFile) :
+    """Load the content of a blastp output file. The format is assumed to be
+    the one obtained with -outfmt 6
+
+    Args:
+        outputFile (str): Path to the blaspt output file to parse
+
+    Returns:
+        A dictionary with qseqid as keys and lists of blastp results as values
+
+    """
+    out = dict()
+    with open(outputFile, "r") as fi :
+        for line in fi :
+            line = line.rstrip()
+            if line != "" :
+                line = line.split("\t")
+                result = dict(zip(OUTFMT_HEADER, line))
+                out[result["qseqid"]] = out.get(result["qseqid"], [])
+                out[result["qseqid"]].append(result)
+    return out
+
+### ** getBestMatch
+
+def getBestMatch(blastpOutput) :
+    """Get the best match for each qseqid from a blastp result. For each 
+    qseqid, a list of the sseqid with the best bitscore is returned (there
+    can be several sseqid in the list if there are ties).
+    
+
+    Args:
+        blastpOutput (dict): Output from parseBlastpOutput()
+
+    Returns:
+        Dictionary mapping each qseqid to its list of best sseqid matches
+
+    """
+    out = dict()
+    for (qseqid, result) in blastpOutput.items() :
+        sseqids = [(x["sseqid"], float(x["bitscore"])) for x in result]
+        sseqids.sort(key = lambda x: x[1], reverse = True)
+        bestBitscore = sseqids[0][1]
+        sseqids = [x[0] for x in sseqids if x[1] == bestBitscore]
+        out[qseqid] = sseqids
+    return out
+
+### ** reciprocalBestMatch
+
+def reciprocalBestMatch(bestMatches1, bestMatches2) :
+    """Find the reciprocal best matches from two blastp datasets
+
+    Args:
+        bestMatches1 (dict): Output from getBestMatch()
+        bestMatches2 (dict): Output from getBestMatch()
+
+    Returns:
+        A list of best pairs
+
+    """
+    out = set()
+    for (qseqid, matches) in bestMatches1.items() :
+        for match in matches :
+            reciprocalMatches = bestMatches2.get(match, [])
+            if qseqid in reciprocalMatches :
+                out.add(frozenset([qseqid, match]))
+    for (qseqid, matches) in bestMatches2.items() :
+        for match in matches :
+            reciprocalMatches = bestMatches1.get(match, [])
+            if qseqid in reciprocalMatches :
+                out.add(frozenset([qseqid, match]))
+    out = list(out)
+    cleanOut = [list(x) for x in out]
+    cleanOut = [x if x[0] in bestMatches1.keys() else [x[1], x[0]] for x in cleanOut]
+    return cleanOut
+

@@ -85,6 +85,10 @@ def makeParser() :
                         "(useful to make sure that all cores get a similar "
                         "work load in the case the sequences are sorted "
                         "by length in the input file)")
+    # Reciprocal blastp
+    parser.add_argument("-r", "--reciprocal_blastp", action = "store_true",
+                        help = "Perform a reciprocal blastp between QUERY_FILE "
+                        " and SUBJECT_FILE. Output to stdout.")
     return parser
 
 ### * Main
@@ -108,31 +112,45 @@ def main(args = None, stdout = None, stderr = None) :
         stderr = sys.stderr
     # Test for blast binaries
     # isAvailable
-    # Ungap input file
-    pyblastp.ungapFasta(args.query_file, args.query_file + ".ungap.tmp")
-    inputFile = args.query_file + ".ungap.tmp"
-    # Shuffle
-    if args.shuffle :
-        pyblastp.shuffleFastaFile(inputFile, inputFile + ".shuffled")
-        shutil.move(inputFile + ".shuffled", inputFile)
-    # Make database
-    if args.subject_file is not None :
-        db = pyblastp.makeBlastDb(inFile = args.subject_file,
-                                  dbtype = "prot")["db"]
-    elif args.db is None :
-        db = pyblastp.makeBlastDb(inFile = inputFile, dbtype = "prot")["db"]
-    else :
-        db = args.db
-    # Perform blastp
-    if args.output is None :
-        args.output = args.query_file + ".out"
-    run = pyblastp.runBlastp(query = inputFile, db = db,
-                             evalMax = args.eval, task = args.task,
-                             out = args.output,
-                             max_target_seqs = args.max_target_seqs,
-                             cores = args.parallel)
-    # Remove input file and database
-    os.remove(inputFile)
-    if args.db is None :
-        pyblastp.removeBlastpDb(db = db)
+    # Function for one run
+    def run() :
+        # Ungap input file
+        pyblastp.ungapFasta(args.query_file, args.query_file + ".ungap.tmp")
+        inputFile = args.query_file + ".ungap.tmp"
+        # Shuffle
+        if args.shuffle :
+            pyblastp.shuffleFastaFile(inputFile, inputFile + ".shuffled")
+            shutil.move(inputFile + ".shuffled", inputFile)
+        # Make database
+        if args.subject_file is not None :
+            db = pyblastp.makeBlastDb(inFile = args.subject_file,
+                                      dbtype = "prot")["db"]
+        elif args.db is None :
+            db = pyblastp.makeBlastDb(inFile = inputFile, dbtype = "prot")["db"]
+        else :
+            db = args.db
+        # Perform blastp
+        if args.output is None :
+            args.output = args.query_file + ".out"
+        run = pyblastp.runBlastp(query = inputFile, db = db,
+                                 evalMax = args.eval, task = args.task,
+                                 out = args.output,
+                                 max_target_seqs = args.max_target_seqs,
+                                 cores = args.parallel)
+        # Remove input file and database
+        os.remove(inputFile)
+        if args.db is None :
+            pyblastp.removeBlastpDb(db = db)
+    # Run
+    run()
+    # Reciprocal blastp
+    if args.reciprocal_blastp :
+        out1 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(args.output))
+        args.query_file, args.subject_file = args.subject_file, args.query_file
+        run()
+        out2 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(args.output))
+        bestMatches = pyblastp.reciprocalBestMatch(out1, out2)
+        os.remove(args.output)
+        for l in bestMatches :
+            stdout.write("\t".join(l) + "\n")
     sys.exit(0)
