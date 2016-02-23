@@ -113,7 +113,7 @@ def main(args = None, stdout = None, stderr = None) :
     # Test for blast binaries
     # isAvailable
     # Function for one run
-    def run() :
+    def run(outfmt_option = "6") :
         # Ungap input file
         pyblastp.ungapFasta(args.query_file, args.query_file + ".ungap.tmp")
         inputFile = args.query_file + ".ungap.tmp"
@@ -136,21 +136,45 @@ def main(args = None, stdout = None, stderr = None) :
                                  evalMax = args.eval, task = args.task,
                                  out = args.output,
                                  max_target_seqs = args.max_target_seqs,
-                                 cores = args.parallel)
+                                 cores = args.parallel,
+                                 outfmt = outfmt_option)
         # Remove input file and database
         os.remove(inputFile)
         if args.db is None :
             pyblastp.removeBlastpDb(db = db)
     # Run
-    run()
+    if not args.reciprocal_blastp :
+        run()
     # Reciprocal blastp
     if args.reciprocal_blastp :
-        out1 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(args.output))
+        # Check that a subject file is provided
+        assert args.subject_file is not None
+        # Prepare the output file names
+        qfile = os.path.basename(args.query_file)
+        sfile = os.path.basename(args.subject_file)
+        outFile1 = qfile + "-vs-" + sfile + ".tsv"
+        outFile2 = sfile + "-vs-" + qfile + ".tsv"
+        # First run
+        args.output = outFile1
+        run(outfmt_option = pyblastp.OUTFMT_RECIPROCAL_BLASTP_OPTION)
+        # Second run
         args.query_file, args.subject_file = args.subject_file, args.query_file
-        run()
-        out2 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(args.output))
+        args.output = outFile2
+        run(outfmt_option = pyblastp.OUTFMT_RECIPROCAL_BLASTP_OPTION)
+        # Parse the run results
+        out1 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(outFile1,
+                 header = pyblastp.OUTFMT_RECIPROCAL_BLASTP_HEADER))
+        out2 = pyblastp.getBestMatch(pyblastp.parseBlastpOutput(outFile2,
+                 header = pyblastp.OUTFMT_RECIPROCAL_BLASTP_HEADER))
         bestMatches = pyblastp.reciprocalBestMatch(out1, out2)
-        os.remove(args.output)
-        for l in bestMatches :
-            stdout.write("\t".join(l) + "\n")
+        # Write to stdout
+        if (len(bestMatches) > 0) :
+            header = ["qseqid", "sseqid", "qlen", "slen", "qstart", "qend",
+                      "sstart", "send", "length", "pident", "gapopen",
+                      "mismatch", "evalue", "bitscore"]
+            header = (["A", "B"] + [x + "-AB" for x in header] +
+                      [x + "-BA" for x in header])
+            stdout.write("\t".join(header) + "\n")
+            for l in bestMatches :
+                stdout.write("\t".join([l[x].strip() for x in header]) + "\n")
     sys.exit(0)

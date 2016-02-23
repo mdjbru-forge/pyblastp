@@ -19,6 +19,13 @@ from Bio import AlignIO
 
 OUTFMT_HEADER = ["qseqid", "sseqid", "pident", "length", "mismatch", "gapopen",
                  "qstart", "qend", "sstart", "send", "evalue", "bitscore"]
+OUTFMT_RECIPROCAL_BLASTP_OPTION =  ("6 qseqid sseqid pident length mismatch "
+                                    "gapopen qstart qend sstart send evalue "
+                                    "bitscore qlen slen")
+OUTFMT_RECIPROCAL_BLASTP_HEADER = ["qseqid", "sseqid", "pident", "length",
+                                   "mismatch", "gapopen", "qstart", "qend",
+                                   "sstart", "send", "evalue", "bitscore",
+                                   "qlen", "slen"]
 
 ### * Functions
 
@@ -71,7 +78,8 @@ def makeBlastDb(inFile, dbtype, outDb = None) :
 
 ### ** runBlastp(query, db, evalMax, task, out, max_target_seqs, jobs, cores)
 
-def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, cores = 1) :
+def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, cores = 1,
+              outfmt = "6") :
     """Perform a blastp run. For the parallel version of it, use GNU parallel, 
     as explained here: https://www.biostars.org/p/63816/.
 
@@ -86,6 +94,7 @@ def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, 
           with '.out' suffix appended.
         jobs (int): Number of cores to use for blastp run. If more than 1, use
           GNU parallel to split the workload across several cores.
+        outfmt (str): Passed to blastp as the -outfmt option
 
     Returns:
         Name of the output file
@@ -102,7 +111,7 @@ def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, 
         command += ["-seg", "yes"]
         command += ["-evalue", str(evalMax)]
         command += ["-out", out]
-        command += ["-outfmt", "6"]
+        command += ["-outfmt", outfmt]
         command += ["-max_target_seqs", str(max_target_seqs)]
         p = subprocess.Popen(command)
         p.wait()
@@ -114,7 +123,7 @@ def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, 
         command += "blastp -query - "
         command += "-db " + db + " -task " + task
         command += " -seg yes " + "-evalue " + str(evalMax)
-        command += " -outfmt 6 "
+        command += " -outfmt " + outfmt + " "
         command += "-max_target_seqs " + str(max_target_seqs) + " "
         command += "> " + out
         os.system(command)
@@ -131,7 +140,7 @@ def runBlastp(query, db, evalMax, task, out, max_target_seqs = 10000, jobs = 1, 
             command += ["-seg", "yes"]
             command += ["-evalue", str(evalMax)]
             command += ["-out", inputFile + ".out"]
-            command += ["-outfmt", "6"]
+            command += ["-outfmt", outfmt]
             command += ["-max_target_seqs", str(max_target_seqs)]
             blastpProcesses.append(subprocess.Popen(command))            
         # Wait until all the processes have stopped
@@ -293,12 +302,13 @@ def ungapFasta(inputFile, out) :
 
 ### ** parseBlastpOutput
 
-def parseBlastpOutput(outputFile) :
+def parseBlastpOutput(outputFile, header = OUTFMT_HEADER) :
     """Load the content of a blastp output file. The format is assumed to be
     the one obtained with -outfmt 6
 
     Args:
         outputFile (str): Path to the blaspt output file to parse
+        header (list of str): Header with column names
 
     Returns:
         A dictionary with qseqid as keys and lists of blastp results as values
@@ -310,7 +320,7 @@ def parseBlastpOutput(outputFile) :
             line = line.rstrip()
             if line != "" :
                 line = line.split("\t")
-                result = dict(zip(OUTFMT_HEADER, line))
+                result = dict(zip(header, line))
                 out[result["qseqid"]] = out.get(result["qseqid"], [])
                 out[result["qseqid"]].append(result)
     return out
@@ -322,7 +332,9 @@ def getBestMatch(blastpOutput) :
     qseqid, a list of the sseqid with the best bitscore is returned (there
     can be several sseqid in the list if there are ties).
     
-
+    Note that the blastp output must contains the columns specified in 
+    OUTFMT_RECIPROCAL_BLASTP_HEADER.
+    
     Args:
         blastpOutput (dict): Output from parseBlastpOutput()
 
@@ -332,10 +344,10 @@ def getBestMatch(blastpOutput) :
     """
     out = dict()
     for (qseqid, result) in blastpOutput.items() :
-        sseqids = [(x["sseqid"], float(x["bitscore"])) for x in result]
+        sseqids = [(x["sseqid"], float(x["bitscore"]), x) for x in result]
         sseqids.sort(key = lambda x: x[1], reverse = True)
         bestBitscore = sseqids[0][1]
-        sseqids = [x[0] for x in sseqids if x[1] == bestBitscore]
+        sseqids = [x[2] for x in sseqids if x[1] == bestBitscore]
         out[qseqid] = sseqids
     return out
 
@@ -352,19 +364,31 @@ def reciprocalBestMatch(bestMatches1, bestMatches2) :
         A list of best pairs
 
     """
-    out = set()
+    outAB = list()
     for (qseqid, matches) in bestMatches1.items() :
         for match in matches :
-            reciprocalMatches = bestMatches2.get(match, [])
-            if qseqid in reciprocalMatches :
-                out.add(frozenset([qseqid, match]))
+            reciprocalMatches = bestMatches2.get(match["sseqid"], [])
+            if qseqid in [x["sseqid"] for x in reciprocalMatches] :
+                outAB.append(match)
+    outBA = list()
     for (qseqid, matches) in bestMatches2.items() :
         for match in matches :
-            reciprocalMatches = bestMatches1.get(match, [])
-            if qseqid in reciprocalMatches :
-                out.add(frozenset([qseqid, match]))
-    out = list(out)
-    cleanOut = [list(x) for x in out]
-    cleanOut = [x if x[0] in bestMatches1.keys() else [x[1], x[0]] for x in cleanOut]
-    return cleanOut
+            reciprocalMatches = bestMatches1.get(match["sseqid"], [])
+            if qseqid in [x["sseqid"] for x in reciprocalMatches] :
+                outBA.append(match)
+    outAB = [dict(zip([y + "-AB" for y in x.keys()], x.values())) for x in outAB]
+    outBA = [dict(zip([y + "-BA" for y in x.keys()], x.values())) for x in outBA]
+    dictAB = dict(zip([x["qseqid-AB"] + "is-paired-with" + x["sseqid-AB"]
+                       for x in outAB], outAB))
+    dictBA = dict(zip([x["sseqid-BA"] + "is-paired-with" + x["qseqid-BA"]
+                       for x in outBA], outBA))
+    out = list()
+    for pairId in dictAB.keys() :
+        dictABentry = dictAB[pairId]
+        dictBAentry = dictBA[pairId]
+        A = dictABentry["qseqid-AB"]
+        B = dictBAentry["qseqid-BA"]
+        out.append(dict([("A", A), ("B", B)] + dictABentry.items() +
+                        dictBAentry.items()))
+    return out
 
